@@ -31,11 +31,7 @@ contract Raffle is VRFConsumerBaseV2Plus {
     error Raffle__SendMoreEthToEnterRaffle();
     error Raffle__TransferFailed();
     error Raffle__RaffleNotOpen();
-    error Raffle__UpkeepNotNeeded(
-        uint256 currentBalance,
-        uint256 numPlayers,
-        uint256 raffleState
-    );
+    error Raffle__UpkeepNotNeeded(uint256 currentBalance, uint256 numPlayers, uint256 raffleState);
 
     //Type declarations
     enum RaffleState {
@@ -58,7 +54,7 @@ contract Raffle is VRFConsumerBaseV2Plus {
 
     //events
     event RaffleEntered(address indexed player);
-    event pickedWinner(address recentWinner);
+    event WinnerPicked(address indexed recentWinner);
 
     constructor(
         uint256 entranceFee,
@@ -78,7 +74,7 @@ contract Raffle is VRFConsumerBaseV2Plus {
         s_raffleState = RaffleState.OPEN;
     }
 
-    function entreRaffle() external payable {
+    function enterRaffle() external payable {
         // require(msg.value>=i_entranceFee,"Send more eth to enter raffle!");
         if (
             msg.value < i_entranceFee //此种方法更省gas
@@ -103,9 +99,11 @@ contract Raffle is VRFConsumerBaseV2Plus {
      * 3. The contract has ETH.
      * 4. Implicity, your subscription is funded with LINK.
      */
-    function checkUpkeep(
-        bytes memory /* checkData */
-    ) public view returns (bool upkeepNeeded, bytes memory /* performData */) {
+    function checkUpkeep(bytes memory /* checkData */ )
+        public
+        view
+        returns (bool upkeepNeeded, bytes memory /* performData */ )
+    {
         bool isOpen = RaffleState.OPEN == s_raffleState;
         bool timePassed = ((block.timestamp - s_lastTimeStamp) > i_interval);
         bool hasPlayers = s_players.length > 0;
@@ -114,30 +112,25 @@ contract Raffle is VRFConsumerBaseV2Plus {
         return (upkeepNeeded, "0x0"); // can we comment this out?
     }
 
-    function performUpkeep(bytes calldata /* performData */) external {
-        (bool upkeepNeeded, ) = checkUpkeep("");
+    function performUpkeep(bytes calldata /* performData */ ) external {
+        (bool upkeepNeeded,) = checkUpkeep("");
         // require(upkeepNeeded, "Upkeep not needed");
         if (!upkeepNeeded) {
-            revert Raffle__UpkeepNotNeeded(
-                address(this).balance,
-                s_players.length,
-                uint256(s_raffleState)
-            );
+            revert Raffle__UpkeepNotNeeded(address(this).balance, s_players.length, uint256(s_raffleState));
         }
 
         s_raffleState = RaffleState.CALCULATING;
-        VRFV2PlusClient.RandomWordsRequest memory request = VRFV2PlusClient
-            .RandomWordsRequest({
-                keyHash: i_keyHash,
-                subId: i_subscriptionId,
-                requestConfirmations: REQUEST_CONFIRMATION,
-                callbackGasLimit: i_callbackGasLimit,
-                numWords: NUM_WORDS,
-                extraArgs: VRFV2PlusClient._argsToBytes(
-                    // Set nativePayment to true to pay for VRF requests with Sepolia ETH instead of LINK
-                    VRFV2PlusClient.ExtraArgsV1({nativePayment: false})
-                )
-            });
+        VRFV2PlusClient.RandomWordsRequest memory request = VRFV2PlusClient.RandomWordsRequest({
+            keyHash: i_keyHash,
+            subId: i_subscriptionId,
+            requestConfirmations: REQUEST_CONFIRMATION,
+            callbackGasLimit: i_callbackGasLimit,
+            numWords: NUM_WORDS,
+            extraArgs: VRFV2PlusClient._argsToBytes(
+                // Set nativePayment to true to pay for VRF requests with Sepolia ETH instead of LINK
+                VRFV2PlusClient.ExtraArgsV1({nativePayment: false})
+            )
+        });
         // uint256 requestId = s_vrfCoordinator.requestRandomWords(request);
         s_vrfCoordinator.requestRandomWords(request);
     }
@@ -145,7 +138,7 @@ contract Raffle is VRFConsumerBaseV2Plus {
     // CEI : Checks, Effects, Interations
     function fulfillRandomWords(
         //类似纯虚函数
-        uint256 /* requestId */,
+        uint256, /* requestId */
         uint256[] calldata randomWords
     ) internal override {
         //Checks,检查，例如if语句
@@ -156,10 +149,10 @@ contract Raffle is VRFConsumerBaseV2Plus {
         s_raffleState = RaffleState.OPEN;
         s_players = new address payable[](0);
         s_lastTimeStamp = block.timestamp;
-        emit pickedWinner(recentWinner);
+        emit WinnerPicked(recentWinner);
 
         //Interations
-        (bool success, ) = recentWinner.call{value: address(this).balance}("");
+        (bool success,) = recentWinner.call{value: address(this).balance}("");
         if (!success) {
             revert Raffle__TransferFailed();
         }
@@ -167,5 +160,13 @@ contract Raffle is VRFConsumerBaseV2Plus {
 
     function getEntranceFee() external view returns (uint256) {
         return i_entranceFee;
+    }
+
+    function getRaffleState() external view returns (RaffleState) {
+        return s_raffleState;
+    }
+
+    function getPlayer(uint256 indexOfPlayer) external view returns (address) {
+        return s_players[indexOfPlayer];
     }
 }
